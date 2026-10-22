@@ -39,34 +39,51 @@ def update_belief(b, bot_move, h):
 
 # %% Simulate
 h = 0.06   # Wahrscheinlichkeit, dass sich der Lieblingszug des Bots ändert
-n = 150    # Anzahl der Runden
+n = 30    # Anzahl der Runden
 rng = np.random.default_rng(1)
 fav, moves = simulate_bot(n, h, rng)
 
 b = np.array([1/3, 1/3, 1/3])  # Initiale Überzeugung über die Lieblingsgeste des Bots, am Anfang alle gleich wahrscheinlich
 beliefs = np.zeros((n, 3))
+L = np.zeros((2, n))   # Zeile 0: Beobachter mit h=0, Zeile 1: mit h=0.06
+L_simple = np.zeros(n)
+L_simple_0 = 0
+for t in range(n):
+    L_simple_0 = (1 - 0.09) * L_simple_0 + 1.54
+    L_simple[t] = L_simple_0
 
-for t in range(n):  # in jedem Durchlauf geht, der move an der Stelle t und das belief vom vorherigen Schritt hinein, b wird aktualisiert und wird im beliefs-Array an der Stelle t gespeichert
-    b = update_belief(b, moves[t], h)
-    beliefs[t] = b
+moves_stone = np.zeros(n, dtype=int)
 
+for i, h_obs in enumerate([0, 0.06]):
+    b = np.array([1/3, 1/3, 1/3])  # Reset belief for each h_obs
+    for t in range(n):  # in jedem Durchlauf geht, der move an der Stelle t und das belief vom vorherigen Schritt hinein, b wird aktualisiert und wird im beliefs-Array an der Stelle t gespeichert, bzw. die Log-Odds werden in L gespeichert
+        b = update_belief(b, moves_stone[t], h_obs)
+    # beliefs[t] = b
+        L[i, t] = np.log(b[0]/b[1])
 
 anzahl_aenderungen = (np.diff(fav) != 0).sum()
 print(f"Anzahl der Änderungen der Lieblingszüge: {anzahl_aenderungen}")
 
 # %% Plot
-fig, (ax, ax2) = plt.subplots(2, 1, sharex=True, figsize=(10, 8))
-ax.plot(moves, ".", label="Tatsächlich gespielte Züge")
-ax.plot(fav, "-", label="Lieblingszüge")
-ax.set_ylabel("Zug")
-ax.set_yticks([0, 1, 2], ["Stein", "Schere", "Papier"])
-ax.legend()
+# fig, (ax, ax2) = plt.subplots(2, 1, sharex=True, figsize=(10, 8))
+fig, ax2 = plt.subplots(figsize=(10, 8))
+# ax.plot(moves, ".", label="Tatsächlich gespielte Züge")
+# ax.plot(fav, "-", label="Lieblingszüge")
+# ax.set_ylabel("Zug")
+# ax.set_yticks([0, 1, 2], ["Stein", "Schere", "Papier"])
+# ax.legend()
 
-ax2.plot(beliefs[:, 0], "-", color="black", label="Überzeugung Stein")
-ax2.plot(beliefs[:, 1], "-", color="silver", label="Überzeugung Schere")
-ax2.plot(beliefs[:, 2], "-", color="green", label="Überzeugung Papier")
+# ax2.plot(beliefs[:, 0], "-", color="black", label="Überzeugung Stein")
+# ax2.plot(beliefs[:, 1], "-", color="silver", label="Überzeugung Schere")
+# qax2.plot(beliefs[:, 2], "-", color="green", label="Überzeugung Papier")
+ax2.plot(L[0], "-", color="black", label="Log-Odds Stein/Schere h=0 ")
+ax2.plot(L[1], "-", color="silver", label="Log-Odds Stein/Schere h=0.06")
+ax2.plot(L_simple, "--", color="red", label="L_simple")
+
+ax2.axhline(0, color="gray", linestyle="--")
 ax2.set_xlabel("Runde")
-ax2.set_ylabel("Überzeugung")
+# ax2.set_ylabel("Überzeugung")
+ax2.set_ylabel("Log-Odds Stein/Schere")
 ax2.legend()
 
 fig.tight_layout()

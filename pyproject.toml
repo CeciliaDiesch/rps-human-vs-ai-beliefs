@@ -19,6 +19,15 @@ schere-stein-papier = "schere_stein_papier:main"
 requires = ["uv_build>=0.13.1,<0.14.0"]
 build-backend = "uv_build"
 
+[tool.ruff]
+line-length = 220
+
+[tool.black]
+line-length = 220
+
+[tool.autopep8]
+max_line_length = 220
+
 [dependency-groups]
 dev = [
     "ipykernel>=7.4.0",
