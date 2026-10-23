@@ -51,7 +51,21 @@ def choice_probs(b, h, beta, kappa, last_choice):
 
     z = beta * ev + kappa * stick                       # Exponent der Softmax
     x = np.exp(z - np.max(z))                           # größten Wert abziehen: gleiches Ergebnis, kein Überlauf
-    return x/np.sum(x)                                  # normieren, damit die drei Werte 1 ergeben
+    return x/np.sum(x)
+
+
+def log_likelihood(choices, bot_moves, h, beta, kappa):  # selbe Schleife wie bei der Spielerin, nur Wk von echten Wahl aufsummieren, statt choice würfeln
+    """Log-Likelihood der Wahlen unter dem Bayes-Softmax-Modell."""
+    b = np.array([1/3, 1/3, 1/3])
+    ll = 0
+    last_choice = 0
+    for t in range(len(choices)):  # Schritt 2: vorhersagen, ln addieren, dann b aktualisieren
+        k = kappa if t > 0 else 0   # Runde 0: noch keine letzte Wahl
+        probs = choice_probs(b, h, beta, k, last_choice)    # 1. Vorhersage
+        ll += np.log(probs[choices[t]])                     # 2. ln der Wahrscheinlichkeit der echten Wahl der Spielerin
+        b = update_belief(b, bot_moves[t], h)               # 3. Bot-Zug sehen, lernen
+        last_choice = choices[t]
+    return ll
 
 
 # %% Choice test
@@ -63,15 +77,44 @@ for beta in [0.5, 2, 10]:
     for kappa in [0, 1]:
         print(f"{beta=}, {kappa=}: {choice_probs(b, h, beta, kappa, last_choice)}")
 
+# %% Test player
+h = 0.06    # Wahrscheinlichkeit, dass sich der Lieblingszug des Bots ändert
+n = 150      # Anzahl der Runden
+rng = np.random.default_rng(1)
+fav, bot_moves = simulate_bot(n, h, rng)
 
-# %% Simulate
+h_obs = 0.06
+beta = 3
+kappa = 0.5
+
+b = np.array([1/3, 1/3, 1/3])
+choices = np.zeros(n, dtype=int)
+last_choice = 0
+
+for t in range(n):              # pro Runde: Vorhersage → Wahl → Bot-Zug sehen → lernen
+    k = kappa if t > 0 else 0   # Runde 0: noch keine letzte Wahl
+    probs = choice_probs(b, h_obs, beta, k, last_choice)   # Wahlwahrscheinlichkeiten aus der aktuellen Überzeugung b
+    choices[t] = rng.choice(3, p=probs)                    # Spielerin wählt gewichtet nach diesen Wahrscheinlichkeiten
+    b = update_belief(b, bot_moves[t], h_obs)  # jetzt sieht man die gespielte Geste vom Bot; damit b aktualisieren für die nächste Runde
+    last_choice = choices[t]
+print(f"Choices: {choices}")
+
+
+ll = log_likelihood(choices, bot_moves, h, beta, kappa)
+print(f"log_likelihood: {ll}")
+
+ll_false_h0 = log_likelihood(choices, bot_moves, 0, beta, kappa)
+print(f"log_likelihood false h=0: {ll_false_h0}")
+
+ll_false_beta0_kappa0 = log_likelihood(choices, bot_moves, h, 0, 0)
+print(f"log_likelihood false beta=0 and kappa=0; reines Raten: {ll_false_beta0_kappa0}")
+
+# %% Leak comparison
 h = 0.06    # Wahrscheinlichkeit, dass sich der Lieblingszug des Bots ändert
 n = 30      # Anzahl der Runden
 rng = np.random.default_rng(1)
 fav, moves = simulate_bot(n, h, rng)
 
-b = np.array([1/3, 1/3, 1/3])   # Initiale Überzeugung über die Lieblingsgeste des Bots, am Anfang alle gleich wahrscheinlich
-beliefs = np.zeros((n, 3))
 L = np.zeros((2, n))            # Zeile 0: Beobachter mit h=0, Zeile 1: mit h=0.06
 L_simple = np.zeros(n)
 L_simple_0 = 0
