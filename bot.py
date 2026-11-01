@@ -80,6 +80,56 @@ def fit_model(choices, bot_moves, q, h_grid, beta_grid, kappa_grid):
     return h_grid[i], beta_grid[j], kappa_grid[k], ll_grid, i, j, k
 
 
+def simulate_player(n, bot_moves, h_obs, kappa, beta, q, rng):
+    """Simuliert die Wahlen einer Spielerin gegen eine gegebene Bot-Zugfolge."""
+    b = np.array([1/3, 1/3, 1/3])
+    choices = np.zeros(n, dtype=int)
+    last_choice = 0
+    for t in range(n):              # pro Runde: Vorhersage → Wahl → Bot-Zug sehen → lernen
+        kappa_t = kappa if t > 0 else 0   # Runde 0: noch keine letzte Wahl
+        probs = choice_probs(b, h_obs, beta, kappa_t, last_choice, q)   # Wahlwahrscheinlichkeiten aus der aktuellen Überzeugung b
+        choices[t] = rng.choice(3, p=probs)                       # Spielerin wählt gewichtet nach diesen Wahrscheinlichkeiten
+        b = update_belief(b, bot_moves[t], h_obs, q)              # jetzt sieht man die gespielte Geste vom Bot; damit b aktualisieren für die nächste Runde
+        last_choice = choices[t]
+    return choices
+
+
+# %% Simulierte 20 Player for recoevry test
+h = 0.10    # Wahrscheinlichkeit, dass sich der Lieblingszug des Bots ändert
+n = 150
+q = 0.8
+rng = np.random.default_rng(1)
+h_grid = np.linspace(0.01, 0.4, 10)      # 10 Werte von 0,01 bis 0,4
+beta_grid = np.linspace(0.5, 10, 10)
+kappa_grid = np.linspace(-1.5, 2, 8)
+
+true_vals = np.zeros((20, 3))    # wahre h, β, κ pro Spielerin
+fit_vals = np.zeros((20, 3))     # geschätzte h, β, κ
+
+for player in range(20):
+    fav, bot_moves = simulate_bot(n, h, rng, q)
+    h_obs = rng.uniform(0.05, 0.3)
+    beta = rng.uniform(1, 8)
+    kappa = rng.uniform(-1, 1)
+    choices = simulate_player(n, bot_moves, h_obs, kappa, beta, q, rng)
+    h_fit, beta_fit, kappa_fit, ll_grid, i, j, k = fit_model(choices, bot_moves, q, h_grid, beta_grid, kappa_grid)
+    true_vals[player] = [h_obs, beta, kappa]
+    fit_vals[player] = [h_fit, beta_fit, kappa_fit]
+    print(f"max_ll_combination for player(h_true ={h_obs}, beta_true={beta},kappa_true={kappa}): h={h_fit}, beta={beta_fit}, kappa={kappa_fit}")
+
+# %% Recovery plot
+fig, axes = plt.subplots(1, 3, figsize=(12, 4))
+names = ["h", "β", "κ"]
+for p in range(3):
+    ax = axes[p]
+    ax.plot(true_vals[:, p], fit_vals[:, p], "o")                 # ein Punkt pro Spielerin
+    lo = min(true_vals[:, p].min(), fit_vals[:, p].min())
+    hi = max(true_vals[:, p].max(), fit_vals[:, p].max())
+    ax.plot([lo, hi], [lo, hi], "--", color="gray")              # Diagonale: geschätzt = wahr
+    ax.set_xlabel(f"wahr {names[p]}")
+    ax.set_ylabel(f"geschätzt {names[p]}")
+fig.tight_layout()
+plt.show()
 # %% Choice test
 b = np.array([0.903, 0.048, 0.048])
 h = 0.06
@@ -100,15 +150,7 @@ fav, bot_moves = simulate_bot(n, h, rng, q)
 h_obs = 0.15
 beta = 3
 kappa = 0.5
-b = np.array([1/3, 1/3, 1/3])
-choices = np.zeros(n, dtype=int)
-last_choice = 0
-for t in range(n):              # pro Runde: Vorhersage → Wahl → Bot-Zug sehen → lernen
-    kappa_t = kappa if t > 0 else 0   # Runde 0: noch keine letzte Wahl
-    probs = choice_probs(b, h_obs, beta, kappa_t, last_choice, q)   # Wahlwahrscheinlichkeiten aus der aktuellen Überzeugung b
-    choices[t] = rng.choice(3, p=probs)                       # Spielerin wählt gewichtet nach diesen Wahrscheinlichkeiten
-    b = update_belief(b, bot_moves[t], h_obs, q)              # jetzt sieht man die gespielte Geste vom Bot; damit b aktualisieren für die nächste Runde
-    last_choice = choices[t]
+choices = simulate_player(n, bot_moves, h_obs, kappa, beta, q, rng)
 
 h_grid = np.linspace(0.01, 0.4, 15)      # 15 Werte von 0,01 bis 0,4
 beta_grid = np.linspace(0.5, 10, 15)
@@ -178,7 +220,7 @@ ax2.legend()
 
 fig.tight_layout()
 plt.show()
-#  %% Leak comparison
+# %% Leak comparison
 h = 0.06    # Wahrscheinlichkeit, dass sich der Lieblingszug des Bots ändert
 n = 30      # Anzahl der Runden
 q = 0.7
