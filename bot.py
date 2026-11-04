@@ -88,7 +88,7 @@ def simulate_player(n, bot_moves, h_obs, kappa, beta, q, rng):
     for t in range(n):              # pro Runde: Vorhersage → Wahl → Bot-Zug sehen → lernen
         kappa_t = kappa if t > 0 else 0   # Runde 0: noch keine letzte Wahl
         probs = choice_probs(b, h_obs, beta, kappa_t, last_choice, q)   # Wahlwahrscheinlichkeiten aus der aktuellen Überzeugung b
-        choices[t] = rng.choice(3, p=probs)                       # Person wählt gewichtet nach diesen Wahrscheinlichkeiten
+        choices[t] = rng.choice(3, p=probs)                       # Person wählt gewichtet nach diesen Wahrscheinlichkeiten eine der Gesten aus, bei Gleichverteilung zufällig
         b = update_belief(b, bot_moves[t], h_obs, q)              # jetzt sieht man die gespielte Geste vom Bot; damit b aktualisieren für die nächste Runde
         last_choice = choices[t]
     return choices
@@ -152,16 +152,20 @@ def switch_probs(choices, bot_moves):
     return switch_count / np.array([wins, loses, equal])
 
 
+def outcome(choice, bot_move):
+    """Ergebnis einer Runde für die Person: 0 = Sieg, 1 = Niederlage, 2 = Unentschieden"""
+    if bot_move == (choice + 1) % 3:
+        return 0
+    elif choice == (bot_move + 1) % 3:
+        return 1
+    return 2
+
+
 def streak_lengths(choices, bot_moves):
     """Serienlänge jeder Runde: wie viele Runden bis einschließlich dieser hintereinander dasselbe Ergebnis hatten."""
     outcomes = np.zeros(len(choices), dtype=int)  # outcomes = array mit einträgen wins = 0, lose = 1, equal = 2
     for t in range(len(choices)):
-        if (bot_moves[t] == (choices[t] + 1) % 3):
-            outcomes[t] = 0
-        elif (choices[t] == (bot_moves[t] + 1) % 3):
-            outcomes[t] = 1
-        else:
-            outcomes[t] = 2
+        outcomes[t] = outcome(choices[t], bot_moves[t])
     streak_len = [1]
     for i in range(1, len(outcomes)):
         if outcomes[i] == outcomes[i-1]:
@@ -184,6 +188,37 @@ def switch_probs_streak(choices, bot_moves):
             switch_count[outcomes[t], column_count_index[t]] += 1
     return switch_count / count, count
 
+
+def play_vs_markov(n, h_obs, beta, kappa, q, rng):
+    """Spiel einer simulierten Person gegen den Markov-Bot"""
+    bot_moves = np.zeros(n, dtype=int)                  # Array, gespielten Züge des Bots pro Runde
+    trans = np.zeros((3, 3))                            # 3x3-Array: wie oft folgt der letzten Geste 0,1,2 die aktuelle Geste 0,1,2
+    b = np.array([1/3, 1/3, 1/3])
+    choices = np.zeros(n, dtype=int)
+    last_choice = rng.integers(0, 3)                    # Zufälliger Start des simulierten Players
+    for t in range(n):                                  # pro Runde: Vorhersage → Wahl → Bot-Zug sehen → lernen
+        kappa_t = kappa if t > 0 else 0                 # Runde 0: noch keine letzte Wahl
+        trans_row = trans[last_choice]                      # was die Person bisher nach last_choice gespielt hat
+        bot_tip = rng.choice(np.flatnonzero(trans_row == trans_row.max()))  # häufigste Geste nach last_choice, bei Gleichstand zufällig
+        bot_moves[t] = (bot_tip + 2) % 3                                    # Bot spielt die Kontergeste zum Tipp
+        probs = choice_probs(b, h_obs, beta, kappa_t, last_choice, q)   # Wahlwahrscheinlichkeiten aus der aktuellen Überzeugung b
+        choices[t] = rng.choice(3, p=probs)                       # Person wählt gewichtet nach diesen Wahrscheinlichkeiten
+        b = update_belief(b, bot_moves[t], h_obs, q)              # jetzt sieht man die gespielte Geste vom Bot; damit b aktualisieren für die nächste Runde
+        if t > 0:                                           # Runde 0: noch keine letzte Wahl, also kein Übergang
+            trans[last_choice, choices[t]] += 1             # Bot lernt: Person hat nach last_choice jetzt choices[t] gespielt
+        last_choice = choices[t]
+    return choices, bot_moves
+
+
+# %% Test play_vs_markov: Gewinnquoten
+rng = np.random.default_rng(1)
+player_wins = np.zeros(50)
+bot_wins = np.zeros(50)
+for rep in range(50):                                        # 50 Spiele
+    choices, bot_moves = play_vs_markov(150, 0.1, 3, 0.5, 0.8, rng)
+    player_wins[rep] = np.mean(bot_moves == (choices + 1) % 3)   # Person schlägt Bot
+    bot_wins[rep] = np.mean(choices == (bot_moves + 1) % 3)      # Bot schlägt Person
+print(f"{player_wins.mean()=:.3f}, {bot_wins.mean()=:.3f}")   # erwartet: ca. 0,32 und 0,48
 
 # %% Test switch_probs_streak
 choices = np.array([0, 0, 0, 2, 1, 0, 0, 0])
