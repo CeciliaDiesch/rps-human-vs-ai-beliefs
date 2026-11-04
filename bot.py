@@ -190,25 +190,72 @@ def switch_probs_streak(choices, bot_moves):
 
 
 def play_vs_markov(n, h_obs, beta, kappa, q, rng):
-    """Spiel einer simulierten Person gegen den Markov-Bot"""
-    bot_moves = np.zeros(n, dtype=int)                  # Array, gespielten Züge des Bots pro Runde
-    trans = np.zeros((3, 3))                            # 3x3-Array: wie oft folgt der letzten Geste 0,1,2 die aktuelle Geste 0,1,2
+    """Spiel einer simulierten Person gegen einen Bot, der letzte Geste und letztes Ergebnis berücksichtigt"""
+    bot_moves = np.zeros(n, dtype=int)
+    trans = np.zeros((3, 3, 3))                 # 3 Blöcke (letzte Geste) mit je 3×3 (Zeile: letztes Ergebnis, Spalte: nächste Geste); Einträge = Anzahl
     b = np.array([1/3, 1/3, 1/3])
     choices = np.zeros(n, dtype=int)
-    last_choice = rng.integers(0, 3)                    # Zufälliger Start des simulierten Players
-    for t in range(n):                                  # pro Runde: Vorhersage → Wahl → Bot-Zug sehen → lernen
-        kappa_t = kappa if t > 0 else 0                 # Runde 0: noch keine letzte Wahl
-        trans_row = trans[last_choice]                      # was die Person bisher nach last_choice gespielt hat
-        bot_tip = rng.choice(np.flatnonzero(trans_row == trans_row.max()))  # häufigste Geste nach last_choice, bei Gleichstand zufällig
-        bot_moves[t] = (bot_tip + 2) % 3                                    # Bot spielt die Kontergeste zum Tipp
-        probs = choice_probs(b, h_obs, beta, kappa_t, last_choice, q)   # Wahlwahrscheinlichkeiten aus der aktuellen Überzeugung b
-        choices[t] = rng.choice(3, p=probs)                       # Person wählt gewichtet nach diesen Wahrscheinlichkeiten
-        b = update_belief(b, bot_moves[t], h_obs, q)              # jetzt sieht man die gespielte Geste vom Bot; damit b aktualisieren für die nächste Runde
-        if t > 0:                                           # Runde 0: noch keine letzte Wahl, also kein Übergang
-            trans[last_choice, choices[t]] += 1             # Bot lernt: Person hat nach last_choice jetzt choices[t] gespielt
+    last_choice = 0
+    last_outcome = 0                            # Platzhalter für Runde 0 (0 = Sieg, 1 = Niederlage, 2 = Unentschieden)
+    for t in range(n):
+        kappa_t = kappa if t > 0 else 0
+        trans_row = trans[last_choice, last_outcome]    # was die Person bisher nach dieser Geste mit diesem Ergebnis gespielt hat
+        bot_tip = rng.choice(np.flatnonzero(trans_row == trans_row.max()))
+        bot_moves[t] = (bot_tip + 2) % 3
+        probs = choice_probs(b, h_obs, beta, kappa_t, last_choice, q)
+        choices[t] = rng.choice(3, p=probs)
+        b = update_belief(b, bot_moves[t], h_obs, q)
+        if t > 0:
+            trans[last_choice, last_outcome, choices[t]] += 1
         last_choice = choices[t]
-    return choices, bot_moves
+        last_outcome = outcome(choices[t], bot_moves[t])  # Ergebnis dieser Runde für die nächste merken
+    return choices, bot_moves, trans
 
+
+# %%Test Profil 2 simulierte Player
+h = 0.10
+n = 150
+q = 0.8
+rng = np.random.default_rng(1)
+fav, bot_moves = simulate_bot(n, h, rng, q)
+choices_player_1 = simulate_player(n, bot_moves, 0.1, 0.5, 3, q, rng)
+choices_player_2 = simulate_player(n, bot_moves, 0.3, -0.5, 3, q, rng)
+choices_ideal = ideal_choices(bot_moves, h, q)
+idx_switches_1, category_1 = classify_switches(choices_player_1, choices_ideal, 2)
+category_counts_1 = np.bincount(category_1, minlength=6)
+idx_switches_2, category_2 = classify_switches(choices_player_2, choices_ideal, 2)
+category_counts_2 = np.bincount(category_2, minlength=6)
+switch_probs_player_1 = switch_probs(choices_player_1, bot_moves)
+switch_probs_player_2 = switch_probs(choices_player_2, bot_moves)
+switch_probs_ideal = switch_probs(choices_ideal, bot_moves)
+switch_probs_streak_player_1, count_player_1 = switch_probs_streak(choices_player_1, bot_moves)
+switch_probs_streak_player_2, count_player_2 = switch_probs_streak(choices_player_2, bot_moves)
+switch_probs_streak_ideal, count_ideal = switch_probs_streak(choices_ideal, bot_moves)
+print(f"{idx_switches_1, category_1=}")
+print(f"{category_counts_1=}")
+print(f"{idx_switches_2, category_2=}")
+print(f"{category_counts_2=}")
+print(f"{switch_probs_player_1=}")
+print(f"{switch_probs_player_2=}")
+print(f"{switch_probs_ideal=}")
+print(f"{switch_probs_streak_ideal=}")
+print(f"{switch_probs_streak_player_1=} ")
+print(f"{switch_probs_streak_player_2=} ")
+print(f"{count_player_1=}")
+print(f"{count_player_2=}")
+print(f"Gewinnquote Spielerin 1: {np.mean(bot_moves == (choices_player_1 + 1) % 3):.2f}")
+print(f"Gewinnquote Spielerin 2: {np.mean(bot_moves == (choices_player_2 + 1) % 3):.2f}")
+print(f"Gewinnquote ideal: {np.mean(bot_moves == (choices_ideal + 1) % 3):.2f}")
+
+# %% Tabelle Profil
+names = ["zu früh", "rechtzeitig", "zu spät", "ohne Anlass", "rechtzeitig, falsch", "zu spät, falsch"]
+print(f"{'':22}{'Spielerin 1':>12}{'Spielerin 2':>12}{'ideal':>8}")
+print(f"{'Wechsel insgesamt':22}{len(idx_switches_1):>12}{len(idx_switches_2):>12}{np.sum(np.diff(choices_ideal) != 0):>8}")
+for i in range(6):
+    print(f"{names[i]:22}{category_counts_1[i]:>12}{category_counts_2[i]:>12}{'–':>8}")
+outcome_names = ["nach Sieg", "nach Niederlage", "nach Unentschieden"]
+for i in range(3):
+    print(f"{outcome_names[i]:22}{switch_probs_player_1[i]:>12.2f}{switch_probs_player_2[i]:>12.2f}{switch_probs_ideal[i]:>8.2f}")
 
 # %% Test play_vs_markov: Gewinnquoten
 rng = np.random.default_rng(1)
@@ -223,8 +270,10 @@ print(f"{player_wins.mean()=:.3f}, {bot_wins.mean()=:.3f}")   # erwartet: ca. 0,
 # %% Test switch_probs_streak
 choices = np.array([0, 0, 0, 2, 1, 0, 0, 0])
 bot_moves = np.array([1, 1, 1, 1, 0, 0, 2, 2])
-switch_probs_serie, count = switch_probs_streak(choices, bot_moves)
-print(f"{switch_probs_serie=}")
+# switch_probs_serie, count = switch_probs_streak(choices, bot_moves)
+# print(f"{switch_probs_serie=}")
+choices, bot_moves, trans = play_vs_markov(150, 0.1, 3, 0.5, 0.8, rng)
+print(f"{np.sum(trans)}")
 
 # %%test streak_lengths
 choices = np.array([0, 0, 0, 2, 1, 0, 0, 0])
@@ -253,6 +302,14 @@ print(f"{switch_probs_ideal=}")
 print(f"{switch_probs_streak_ideal=}")
 print(f"{switch_probs_streak_player=} ")
 
+# %% Test switch_probs
+choices = np.array([0, 0, 2, 2, 2, 1, 1])
+bot_moves = np.array([1, 2, 0, 2, 1, 1, 0])
+print(f"{switch_probs(choices, bot_moves)=}")   # erwartet: [0, 1, 0]
+
+choices = np.array([0, 2, 2, 2])
+bot_moves = np.array([2, 1, 1, 0])
+print(f"{switch_probs(choices, bot_moves)=}")   # erwartet: [nan, 0.333, nan]
 
 # %% Simulierte 20 Player for recoevry test
 h = 0.10    # Wahrscheinlichkeit, dass sich der Lieblingszug des Bots ändert
