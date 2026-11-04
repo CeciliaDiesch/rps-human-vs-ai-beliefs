@@ -7,7 +7,7 @@ np.set_printoptions(precision=3, suppress=True)
 
 
 def simulate_bot(n, h, rng, q):
-    """Simuliert die n Züge eines Bots im Schere-Stein-Papier-Spiel: gibt die Lieblingszüge und die tatsächlich gespielten Züge (0/1/2) zurück."""
+    """Simuliert die n Züge eines Bots im Stein-Schere-Papier-Spiel: gibt die Lieblingszüge und die tatsächlich gespielten Züge (0/1/2) zurück."""
 
     moves = np.zeros(n, dtype=int)                  # Array, gespielten Züge des Bots pro Runde
     fav = np.zeros(n, dtype=int)                    # Array, Lieblingszüge pro Runde
@@ -54,7 +54,7 @@ def choice_probs(b, h, beta, kappa, last_choice, q):
     return x/np.sum(x)
 
 
-def log_likelihood(choices, bot_moves, h, beta, kappa, q):  # selbe Schleife wie bei der Spielerin, nur Wk von echten Wahl aufsummieren, statt choice würfeln
+def log_likelihood(choices, bot_moves, h, beta, kappa, q):  # selbe Schleife wie bei der Person, nur Wk von echten Wahl aufsummieren, statt choice würfeln
     """Log-Likelihood der Wahlen unter dem Bayes-Softmax-Modell."""
     b = np.array([1/3, 1/3, 1/3])
     ll = 0
@@ -62,7 +62,7 @@ def log_likelihood(choices, bot_moves, h, beta, kappa, q):  # selbe Schleife wie
     for t in range(len(choices)):  # vorhersagen, ln addieren, dann b aktualisieren
         kappa_t = kappa if t > 0 else 0                              # Runde 0: noch keine letzte Wahl
         probs = choice_probs(b, h, beta, kappa_t, last_choice, q)    # 1. Vorhersage
-        ll += np.log(probs[choices[t]])                        # 2. ln der Wahrscheinlichkeit der echten Wahl der Spielerin
+        ll += np.log(probs[choices[t]])                        # 2. ln der Wahrscheinlichkeit der echten Wahl der Person
         b = update_belief(b, bot_moves[t], h, q)               # 3. Bot-Zug sehen, lernen
         last_choice = choices[t]
     return ll
@@ -81,17 +81,142 @@ def fit_model(choices, bot_moves, q, h_grid, beta_grid, kappa_grid):
 
 
 def simulate_player(n, bot_moves, h_obs, kappa, beta, q, rng):
-    """Simuliert die Wahlen einer Spielerin gegen eine gegebene Bot-Zugfolge."""
+    """Simuliert die Wahlen einer Person gegen eine gegebene Bot-Zugfolge."""
     b = np.array([1/3, 1/3, 1/3])
     choices = np.zeros(n, dtype=int)
     last_choice = 0
     for t in range(n):              # pro Runde: Vorhersage → Wahl → Bot-Zug sehen → lernen
         kappa_t = kappa if t > 0 else 0   # Runde 0: noch keine letzte Wahl
         probs = choice_probs(b, h_obs, beta, kappa_t, last_choice, q)   # Wahlwahrscheinlichkeiten aus der aktuellen Überzeugung b
-        choices[t] = rng.choice(3, p=probs)                       # Spielerin wählt gewichtet nach diesen Wahrscheinlichkeiten
+        choices[t] = rng.choice(3, p=probs)                       # Person wählt gewichtet nach diesen Wahrscheinlichkeiten
         b = update_belief(b, bot_moves[t], h_obs, q)              # jetzt sieht man die gespielte Geste vom Bot; damit b aktualisieren für die nächste Runde
         last_choice = choices[t]
     return choices
+
+
+def ideal_choices(bot_moves, h, q):
+    """Ideale Wahl in jeder Runde: Geste mit dem höchsten Erwartungswert."""
+    b = np.array([1/3, 1/3, 1/3])
+    ideal = np.zeros(len(bot_moves), dtype=int)
+    for t in range(len(bot_moves)):                     # vorhersagen → Bot-Zug sehen → lernen
+        probs = choice_probs(b, h, 1, 0, 0, q)          # β = 1, κ = 0: Reihenfolge wie beim EV
+        ideal[t] = np.argmax(probs)                     # Geste mit dem höchsten Erwartungswert
+        b = update_belief(b, bot_moves[t], h, q)        # Bot-Zug sehen, Überzeugung aktualisieren
+    return ideal
+
+
+def classify_switches(choices, recs, k):
+    """Gibt für jeden Wechsel der Person die Runde und Kategorie zurück"""
+    idx_recs = np.where(np.diff(recs) != 0)[0] + 1  # array mit Rundenindizes nach allen Wechsel des idealen Players
+    idx_person = np.where(np.diff(choices) != 0)[0] + 1  # array mit Rundenindizes nach allen Wechsel der Person
+    category = np.full(len(idx_person), -1)
+    for s in range(len(idx_person)):
+        t = idx_person[s]                       # Rundenindex nach Wechsel der Person
+        t_prev = idx_person[s-1] if s > 0 else 0   # Rundenindex vom letzten Wechsel der Person (Index nach Wechsel)
+        prev = idx_recs[idx_recs <= t]          # alle Beobachter-Wechsel bis Runde t
+        last = prev[-1] if len(prev) > 0 else 0  # Rundenindex nach letzten Beobachter-Wechsel, falls noch keiner stattfand, dann ist Rundenindex 0 der letzte Wechsel
+        d = t - last
+
+        if choices[t] == recs[t]:  # falls die neue Wahl der aktuellen idealen Wahl entspricht
+            if d <= k:
+                category[s] = 1       # category 1 steht für rechtzeitig
+            else:
+                category[s] = 2       # category 2 steht für zu spät
+        elif choices[t] in recs[t+1: t+k+1]:
+            category[s] = 0       # category 0 steht für zu früh
+        elif last > t_prev and choices[t-1] != recs[t]:
+            if d <= k:
+                category[s] = 4  # category 4 steht für rechtzeitig aber falsche Geste
+            else:
+                category[s] = 5  # category 5 steht für zu spät aber falsche Geste
+        else:
+            category[s] = 3         # category 3 steht für ohne Anlass
+    return idx_person, category
+
+
+def switch_probs(choices, bot_moves):
+    """Wechselwahrscheinlichkeit der Person nach Sieg, Niederlage oder Unentschieden"""
+
+    idx_person = np.where(np.diff(choices) != 0)[0]  # Rundenindizes vor allen Wechseln der Person
+    switch_count = np.zeros(3)                       # Anzahl Wechsel nach [Sieg, Niederlage, Unentschieden]
+    for t in idx_person:
+        if bot_moves[t] == (choices[t] + 1) % 3:
+            switch_count[0] += 1
+        elif choices[t] == (bot_moves[t] + 1) % 3:
+            switch_count[1] += 1
+        else:
+            switch_count[2] += 1
+    wins = np.sum(bot_moves[:-1] == (choices[:-1] + 1) % 3)
+    loses = np.sum(choices[:-1] == (bot_moves[:-1] + 1) % 3)
+    equal = np.sum(choices[:-1] == bot_moves[:-1])
+    return switch_count / np.array([wins, loses, equal])
+
+
+def streak_lengths(choices, bot_moves):
+    """Serienlänge jeder Runde: wie viele Runden bis einschließlich dieser hintereinander dasselbe Ergebnis hatten."""
+    outcomes = np.zeros(len(choices), dtype=int)  # outcomes = array mit einträgen wins = 0, lose = 1, equal = 2
+    for t in range(len(choices)):
+        if (bot_moves[t] == (choices[t] + 1) % 3):
+            outcomes[t] = 0
+        elif (choices[t] == (bot_moves[t] + 1) % 3):
+            outcomes[t] = 1
+        else:
+            outcomes[t] = 2
+    streak_len = [1]
+    for i in range(1, len(outcomes)):
+        if outcomes[i] == outcomes[i-1]:
+            streak_len.append(streak_len[-1] + 1)
+        else:
+            streak_len.append(1)
+    return outcomes, streak_len
+
+
+def switch_probs_streak(choices, bot_moves):
+    """Wechselwahrscheinlichkeit und Fallzahl nach Ergebnis (Zeile) und Serienlänge 1, 2, 3+ (Spalte)"""
+    outcomes, streak_len = streak_lengths(choices, bot_moves)
+    L = np.minimum(np.array(streak_len), 3)                # Serienlänge pro Runde, Längen ab 3 zu 3 zusammengefasst
+    column_count_index = L - 1                             # Serienlänge 1, 2, 3+ dem Spaltenindex 0, 1, 2 zuordnen
+    count = np.zeros((3, 3))                               # 3×3-Array: wie oft kam die Kombination vor (Zeile Ergebnis, Spalte Serienlänge):[[Sieg mit Länge 1, Sieg L2, Sieg L3+], [Niederlage L1,..], [Unentsch L1,..]]
+    switch_count = np.zeros((3, 3))                        # wie oft wurde danach gewechselt
+    for t in range(len(choices) - 1):                      # alle Runden außer der letzten
+        count[outcomes[t], column_count_index[t]] += 1     # jede Runde zählen und in dem richtigen Feld von count eintragen
+        if choices[t + 1] != choices[t]:
+            switch_count[outcomes[t], column_count_index[t]] += 1
+    return switch_count / count, count
+
+
+# %% Test switch_probs_streak
+choices = np.array([0, 0, 0, 2, 1, 0, 0, 0])
+bot_moves = np.array([1, 1, 1, 1, 0, 0, 2, 2])
+switch_probs_serie, count = switch_probs_streak(choices, bot_moves)
+print(f"{switch_probs_serie=}")
+
+# %%test streak_lengths
+choices = np.array([0, 0, 0, 2, 1, 0, 0, 0])
+bot_moves = np.array([1, 1, 1, 1, 0, 0, 2, 2])
+outcomes, streak_len = streak_lengths(choices, bot_moves)
+print(f"{streak_len=}")
+
+# %%test switch_probs simulierter Player vs idealer Player
+h = 0.10
+n = 150
+q = 0.8
+rng = np.random.default_rng(5)
+fav, bot_moves = simulate_bot(n, h, rng, q)
+
+h_obs = 0.10
+beta = 3
+kappa = 0.5
+choices_simulated_player = simulate_player(n, bot_moves, h_obs, kappa, beta, q, rng)
+switch_probs_player = switch_probs(choices_simulated_player, bot_moves)
+switch_probs_streak_player, count_player = switch_probs_streak(choices_simulated_player, bot_moves)
+choices_ideal = ideal_choices(bot_moves, h_obs, q)
+switch_probs_ideal = switch_probs(choices_ideal, bot_moves)
+switch_probs_streak_ideal, count_ideal = switch_probs_streak(choices_ideal, bot_moves)
+print(f"{switch_probs_player=}")
+print(f"{switch_probs_ideal=}")
+print(f"{switch_probs_streak_ideal=}")
+print(f"{switch_probs_streak_player=} ")
 
 
 # %% Simulierte 20 Player for recoevry test
@@ -102,8 +227,7 @@ rng = np.random.default_rng(1)
 h_grid = np.linspace(0.01, 0.4, 10)      # 10 Werte von 0,01 bis 0,4
 beta_grid = np.linspace(0.5, 10, 10)
 kappa_grid = np.linspace(-1.5, 2, 8)
-
-true_vals = np.zeros((20, 3))    # wahre h, β, κ pro Spielerin
+true_vals = np.zeros((20, 3))    # wahre h, β, κ pro Person
 fit_vals = np.zeros((20, 3))     # geschätzte h, β, κ
 
 for player in range(20):
@@ -122,7 +246,7 @@ fig, axes = plt.subplots(1, 3, figsize=(12, 4))
 names = ["h", "β", "κ"]
 for p in range(3):
     ax = axes[p]
-    ax.plot(true_vals[:, p], fit_vals[:, p], "o")                 # ein Punkt pro Spielerin
+    ax.plot(true_vals[:, p], fit_vals[:, p], "o")                 # ein Punkt pro Person
     lo = min(true_vals[:, p].min(), fit_vals[:, p].min())
     hi = max(true_vals[:, p].max(), fit_vals[:, p].max())
     ax.plot([lo, hi], [lo, hi], "--", color="gray")              # Diagonale: geschätzt = wahr
@@ -130,12 +254,12 @@ for p in range(3):
     ax.set_ylabel(f"geschätzt {names[p]}")
 fig.tight_layout()
 plt.show()
+
 # %% Choice test
 b = np.array([0.903, 0.048, 0.048])
 h = 0.06
 last_choice = 1
 q = 0.7
-
 for beta in [0.5, 2, 10]:
     for kappa in [0, 1]:
         print(f"{beta=}, {kappa=}: {choice_probs(b, h, beta, kappa, last_choice, q)}")
@@ -169,7 +293,6 @@ plt.show()
 
 # %% Ideal player
 rng = np.random.default_rng(1)
-beta = 100
 n = 100
 
 for h in [0, 0.04, 0.06, 0.1]:
@@ -177,13 +300,8 @@ for h in [0, 0.04, 0.06, 0.1]:
         rates = np.zeros(50)
         for rep in range(50):                       # 50 Wiederholungen
             fav, bot_moves = simulate_bot(n, h, rng, q)
-            b = np.array([1/3, 1/3, 1/3])
-            wins = 0
-            for t in range(n):                             # pro Runde: Vorhersage mit choice probs berechnen → Wahl mit max probs → Bot-Zug sehen → lernen
-                probs = choice_probs(b, h, beta, 0, 0, q)  # Wahl WK aus der aktuellen Überzeugung b mit kappa=0 und last_choice=0 (eine beliebige zahl, da ihr beitrag eh rausfällt durch Multiplikation mit kappa=0)
-                choice = np.argmax(probs)                  # idealer Spieler wählt immer Geste mit max WK im Vergleich zu normalen Spieler (rng.choice(3, p=probs))
-                b = update_belief(b, bot_moves[t], h, q)   # jetzt sieht man die gespielte Geste vom Bot; damit b aktualisieren für die nächste Runde
-                wins += bot_moves[t] == (choice + 1) % 3   # True, wird addiert wenn seine Geste die des Bots schlägt
+            choices = ideal_choices(bot_moves, h, q)
+            wins = np.sum(bot_moves == (choices + 1) % 3)
             rates[rep] = wins / n
         print(f"{h=}, {q=}: {rates.mean():.3f}")
 
