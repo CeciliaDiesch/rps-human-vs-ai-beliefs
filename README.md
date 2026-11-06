@@ -2,15 +2,15 @@
 
 A small pilot project on **what makes people switch strategy** in a changing environment, and whether this depends on **who they believe their opponent is**.
 
-Participants play rock-paper-scissors against an opponent with a hidden preferred gesture that changes at random times. A Bayesian observer model serves as the normative reference, and a softmax choice model is fitted to the participants' choices.
+Participants play rock-paper-scissors against an opponent with a hidden favourite gesture that changes at random times. A Bayesian observer model serves as the normative reference, and a softmax choice model is fitted to the participants' choices.
 
-**Status:** simulation, model and fitting pipeline are implemented; the web-based experiment is in development.
+**Status:** simulation, model, fitting, switch analysis and the learning bot are implemented and tested in part; the web-based experiment is the next step.
 
 ## Experimental design (planned)
 
 | Block | Opponent announced as | Actual opponent |
 |---|---|---|
-| A | Human | Pre-generated sequence (hidden preferred gesture, hazard rate *h*) |
+| A | Human | Pre-generated sequence (hidden favourite gesture, hazard rate *h*) |
 | B | AI 1 | Different pre-generated sequence with identical statistics |
 | C | AI 2 | Learning bot that counters the participant's own patterns |
 
@@ -18,11 +18,13 @@ The blocks vary one factor at a time: A → B changes only the believed identity
 
 ## Model
 
-**Opponent (blocks A and B).** In each round, the opponent plays its preferred gesture with probability *q* and each of the other two gestures with probability (1 − *q*)/2. Between rounds, the preferred gesture switches to one of the other two with hazard rate *h*.
+**Opponent (blocks A and B).** In each round, the opponent plays its favourite gesture with probability *q* and each of the other two gestures with probability (1 − *q*)/2. Between rounds, the favourite gesture switches to one of the other two with hazard rate *h*.
 
-**Bayesian observer.** The belief *b* over the three possible preferred gestures is updated after each round in two steps:
+**Learning bot (block C).** The bot counts how often the participant played each gesture after a given combination of their last gesture and last outcome (win, loss, draw). It predicts the most frequent next gesture (ties broken at random) and plays the gesture that beats it.
 
-**Step 1, prediction** (the preferred gesture may have switched):
+**Bayesian observer.** The belief *b* over the three possible favourite gestures is updated after each round in two steps:
+
+**Step 1, prediction** (the favourite gesture may have switched):
 
 ```math
 b'_i = b_i\,(1-h) + (1-b_i)\,\frac{h}{2}
@@ -51,16 +53,25 @@ P(c) \propto \exp\big(\beta\,\mathrm{EV}_c + \kappa\,[c = c_{t-1}]\big)
 
 ## Code
 
-`bot.py` is organised in cells (`# %%`) that can be run one by one in VS Code:
+The functions live in `src/rps_beliefs/`. `explorations/explorations.py` is organised in cells (`# %%`) that can be run one by one in VS Code:
 
-| Function | Purpose |
-|---|---|
-| `simulate_bot` | Generates the opponent's preferred gestures and played gestures |
-| `update_belief` | Bayesian belief update over the preferred gesture |
-| `choice_probs` | Softmax choice probabilities with β and κ |
-| `log_likelihood` | Log-likelihood of a sequence of choices given (*h*, β, κ) |
-| `fit_model` | Grid search for the maximum-likelihood parameters |
-| `simulate_player` | Simulates a player's choices against a given opponent sequence |
+| Module | Function | Purpose |
+|---|---|---|
+| `bots` | `simulate_bot` | Generates the opponent's favourite gestures and played gestures |
+| `bots` | `outcome` | Result of one round from the participant's view |
+| `bots` | `markov_bot_move` | Learning bot's move: counters the participant's most frequent next gesture |
+| `bots` | `markov_learn` | Updates the learning bot's count table with the participant's choice |
+| `models` | `update_belief` | Bayesian belief update over the favourite gesture |
+| `models` | `choice_probs` | Softmax choice probabilities with β and κ |
+| `models` | `simulate_player` | Simulates a player's choices against a given opponent sequence |
+| `models` | `ideal_choices` | Ideal choice per round: the gesture with the highest expected value |
+| `models` | `play_vs_markov` | Simulates a player against the learning bot |
+| `fitting` | `log_likelihood` | Log-likelihood of a sequence of choices given (*h*, β, κ) |
+| `fitting` | `fit_model` | Grid search for the maximum-likelihood parameters |
+| `analysis` | `classify_switches` | Assigns each switch to one of six categories relative to the ideal observer |
+| `analysis` | `switch_probs` | Switch probability after a win, loss or draw |
+| `analysis` | `streak_lengths` | Outcome and streak length of each round |
+| `analysis` | `switch_probs_streak` | Switch probability and case count by outcome and streak length |
 
 Further cells simulate players, plot beliefs and log-odds, compare the observer with a simple leaky accumulator, compute win rates of an ideal player, and run parameter recovery.
 
@@ -70,21 +81,27 @@ The project uses [uv](https://docs.astral.sh/uv/):
 
 ```bash
 uv sync
-uv run python bot.py
+uv run python explorations/explorations.py
+uv run pytest
 ```
 
 ## Preliminary simulation results
 
 - With *q* = 0.8 and *h* = 0.10, an ideal Bayesian player wins about 63 % of rounds. These values were chosen as a medium difficulty.
 - With 150 rounds per block, β and κ are recovered well and *h* moderately well.
+- The ideal player never switches after a win, and switches after about 70 % of losses and about 40 % of draws.
+- Against a simulated Bayesian player, the learning bot wins about 52 % of rounds (player: about 24 %).
 
 ## Next steps
 
-- Build the web app with a shared database and run a pilot with a few participants
-- Implement the learning bot for block C
-- Classify each strategy switch relative to the ideal observer (too early, on time, too late, without reason)
-- Compare the Bayesian model with simpler alternatives (win-stay/lose-shift, Q-learning)
+- Build the web app with a shared database
+- Run a pilot with a few participants
+- Compare the Bayesian model with alternatives (win-stay/lose-shift, Q-learning, a "reactive opponent" model, a Markov player), per block (planned after the pilot)
 
 ## Author
 
 Cecilia Diesch
+
+## License
+
+[MIT](LICENSE)

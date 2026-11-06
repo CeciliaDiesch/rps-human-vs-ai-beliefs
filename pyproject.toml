@@ -1,8 +1,9 @@
 [project]
-name = "schere-stein-papier"
+name = "rps-beliefs"
 version = "0.1.0"
-description = "Add your description here"
+description = "What makes people switch strategy in rock-paper-scissors, and does it depend on believing the opponent is human or AI?"
 readme = "README.md"
+license = "MIT"
 authors = [
     { name = "CeciliaDiesch", email = "ceciliadiesch@yahoo.com" }
 ]
@@ -11,9 +12,6 @@ dependencies = [
     "matplotlib>=3.11.2",
     "numpy>=2.5.4",
 ]
-
-[project.scripts]
-schere-stein-papier = "schere_stein_papier:main"
 
 [build-system]
 requires = ["uv_build>=0.13.1,<0.14.0"]
@@ -31,4 +29,5 @@ max_line_length = 220
 [dependency-groups]
 dev = [
     "ipykernel>=7.4.0",
+    "pytest>=9.2.0",
 ]
