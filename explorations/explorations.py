@@ -114,7 +114,7 @@ bot_moves = np.array([2, 1, 1, 0])
 print(f"{switch_probs(choices, bot_moves)=}")   # expected: [nan, 0.333, nan]
 
 # %% 20 simulated players for the recovery test
-h = 0.10    # probability that the bot's favourite gesture changes
+h = 0.10    # probability that the bot's favorite gesture changes
 n = 150
 q = 0.8
 rng = np.random.default_rng(1)
@@ -159,7 +159,7 @@ for beta in [0.5, 2, 10]:
         print(f"{beta=}, {kappa=}: {choice_probs(b, h, beta, kappa, last_choice, q)}")
 
 # %% Test player
-h = 0.10    # probability that the bot's favourite gesture changes
+h = 0.10    # probability that the bot's favorite gesture changes
 n = 150      # number of rounds
 q = 0.8
 rng = np.random.default_rng(1)
@@ -213,12 +213,12 @@ for t in range(n):
     b = update_belief(b, moves[t], h, q)    # ideal observer with the true h
     beliefs[t] = b
 
-n_favourite_changes = (np.diff(fav) != 0).sum()
-print(f"Number of favourite gesture changes: {n_favourite_changes}")
+n_favorite_changes = (np.diff(fav) != 0).sum()
+print(f"Number of favorite gesture changes: {n_favorite_changes}")
 
 fig, (ax, ax2) = plt.subplots(2, 1, sharex=True, figsize=(10, 8))
 ax.plot(moves, ".", label="Played gestures")
-ax.plot(fav, "-", label="Favourite gestures")
+ax.plot(fav, "-", label="Favorite gestures")
 ax.set_ylabel("Gesture")
 ax.set_yticks([0, 1, 2], ["Rock", "Scissors", "Paper"])
 ax.legend()
@@ -233,7 +233,7 @@ ax2.legend()
 fig.tight_layout()
 plt.show()
 # %% Leak comparison
-h = 0.06    # probability that the bot's favourite gesture changes
+h = 0.06    # probability that the bot's favorite gesture changes
 n = 30      # number of rounds
 q = 0.7
 L = np.zeros((2, n))            # row 0: observer with h=0, row 1: with h=0.06
@@ -278,10 +278,10 @@ for seed in range(n_seeds):
     n_switches[seed] = np.sum(fav[1:] != fav[:-1])
     fav_shares[seed] = np.bincount(fav, minlength=3) / n
 
-# win rate near 0.63, each favourite about 1/3 of the rounds, 15 switches (expected: 149 * 0.10)
+# win rate near 0.63, each favorite about 1/3 of the rounds, 15 switches (expected: 149 * 0.10)
 ok = (np.abs(wins / n - 0.63) <= 0.01) & np.all(np.abs(fav_shares - 1/3) <= 0.05, axis=1) & (n_switches == 15)
 candidates = np.flatnonzero(ok)
-spread = np.sum((fav_shares - 1/3) ** 2, axis=1)   # how far the favourite shares are from 1/3
+spread = np.sum((fav_shares - 1/3) ** 2, axis=1)   # how far the favorite shares are from 1/3
 
 # per number of wins the two most even lists, then the pair with the smaller total spread
 best = None

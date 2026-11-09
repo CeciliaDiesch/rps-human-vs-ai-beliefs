@@ -4,8 +4,8 @@ import numpy as np
 def simulate_bot(n: int, h: float, rng: np.random.Generator, q: float) -> tuple[np.ndarray, np.ndarray]:
     """Simulate n rounds of the list bot in rock-paper-scissors.
 
-    The favourite gesture changes with probability h per round and is played with probability q.
-    Returns the favourite gestures and the played gestures (0/1/2), each with shape (n,).
+    The favorite gesture changes with probability h per round and is played with probability q.
+    Returns the favorite gestures and the played gestures (0/1/2), each with shape (n,).
     """
 
     moves = np.zeros(n, dtype=int)

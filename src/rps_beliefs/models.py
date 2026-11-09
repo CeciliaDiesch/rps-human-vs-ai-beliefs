@@ -4,10 +4,10 @@ from rps_beliefs.bots import markov_bot_move, markov_learn, outcome
 
 
 def update_belief(b: np.ndarray, bot_move: int, h: float, q: float) -> np.ndarray:
-    """Bayesian update of the belief about the favourite gesture after one bot gesture.
+    """Bayesian update of the belief about the favorite gesture after one bot gesture.
 
     b is the current belief with shape (3,), h the assumed switch rate and q the probability of playing
-    the favourite. Returns the new belief with shape (3,).
+    the favorite. Returns the new belief with shape (3,).
     """
     b_prime = b * (1 - h) + (1 - b) * h / 2
     like = np.full(3, (1 - q) / 2)

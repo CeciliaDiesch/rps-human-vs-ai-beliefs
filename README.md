@@ -2,7 +2,7 @@
 
 A small pilot project on **what makes people switch strategy** in a changing environment, and whether this depends on **who they believe their opponent is**.
 
-Participants play rock-paper-scissors against an opponent with a hidden favourite gesture that changes at random times. A Bayesian observer model serves as the normative reference, and a softmax choice model is fitted to the participants' choices.
+Participants play rock-paper-scissors against an opponent with a hidden favorite gesture that changes at random times. A Bayesian observer model serves as the normative reference, and a softmax choice model is fitted to the participants' choices.
 
 **Status:** simulation, model, fitting, switch analysis and the learning bot are implemented and tested in part; the web-based experiment is the next step.
 
@@ -10,21 +10,23 @@ Participants play rock-paper-scissors against an opponent with a hidden favourit
 
 | Block | Opponent announced as | Actual opponent |
 |---|---|---|
-| A | Human | Pre-generated sequence (hidden favourite gesture, hazard rate *h*) |
+| A | Human | Pre-generated sequence (hidden favorite gesture, hazard rate *h*) |
 | B | AI 1 | Different pre-generated sequence with identical statistics |
 | C | AI 2 | Learning bot that counters the participant's own patterns |
 
 The blocks vary one factor at a time: A → B changes only the believed identity of the opponent, B → C changes only its actual policy.
 
+The experiment is conducted in German.
+
 ## Model
 
-**Opponent (blocks A and B).** In each round, the opponent plays its favourite gesture with probability *q* and each of the other two gestures with probability (1 − *q*)/2. Between rounds, the favourite gesture switches to one of the other two with hazard rate *h*.
+**Opponent (blocks A and B).** In each round, the opponent plays its favorite gesture with probability *q* and each of the other two gestures with probability (1 − *q*)/2. Between rounds, the favorite gesture switches to one of the other two with hazard rate *h*.
 
 **Learning bot (block C).** The bot counts how often the participant played each gesture after a given combination of their last gesture and last outcome (win, loss, draw). It predicts the most frequent next gesture (ties broken at random) and plays the gesture that beats it.
 
-**Bayesian observer.** The belief *b* over the three possible favourite gestures is updated after each round in two steps:
+**Bayesian observer.** The belief *b* over the three possible favorite gestures is updated after each round in two steps:
 
-**Step 1, prediction** (the favourite gesture may have switched):
+**Step 1, prediction** (the favorite gesture may have switched):
 
 ```math
 b'_i = b_i\,(1-h) + (1-b_i)\,\frac{h}{2}
@@ -53,15 +55,15 @@ P(c) \propto \exp\big(\beta\,\mathrm{EV}_c + \kappa\,[c = c_{t-1}]\big)
 
 ## Code
 
-The functions live in `src/rps_beliefs/`. `explorations/explorations.py` is organised in cells (`# %%`) that can be run one by one in VS Code:
+The functions live in `src/rps_beliefs/`. `explorations/explorations.py` is organized in cells (`# %%`) that can be run one by one in VS Code:
 
 | Module | Function | Purpose |
 |---|---|---|
-| `bots` | `simulate_bot` | Generates the opponent's favourite gestures and played gestures |
+| `bots` | `simulate_bot` | Generates the opponent's favorite gestures and played gestures |
 | `bots` | `outcome` | Result of one round from the participant's view |
 | `bots` | `markov_bot_move` | Learning bot's move: counters the participant's most frequent next gesture |
 | `bots` | `markov_learn` | Updates the learning bot's count table with the participant's choice |
-| `models` | `update_belief` | Bayesian belief update over the favourite gesture |
+| `models` | `update_belief` | Bayesian belief update over the favorite gesture |
 | `models` | `choice_probs` | Softmax choice probabilities with β and κ |
 | `models` | `simulate_player` | Simulates a player's choices against a given opponent sequence |
 | `models` | `ideal_choices` | Ideal choice per round: the gesture with the highest expected value |
