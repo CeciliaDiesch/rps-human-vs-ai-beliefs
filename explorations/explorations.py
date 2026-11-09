@@ -1,6 +1,11 @@
 # %% Setup
+import json
+from pathlib import Path
+
 import numpy as np
 import matplotlib.pyplot as plt
+
+import rps_beliefs
 
 from rps_beliefs.analysis import classify_switches, streak_lengths, switch_probs, switch_probs_streak
 from rps_beliefs.bots import simulate_bot
@@ -258,3 +263,42 @@ ax.legend()
 
 fig.tight_layout()
 plt.show()
+
+
+# %% Choose lists X and Y for the web app
+n, h, q = 150, 0.10, 0.8
+n_seeds = 10000
+wins = np.zeros(n_seeds, dtype=int)
+n_switches = np.zeros(n_seeds, dtype=int)
+fav_shares = np.zeros((n_seeds, 3))
+for seed in range(n_seeds):
+    fav, bot_moves = simulate_bot(n, h, np.random.default_rng(seed), q)
+    choices = ideal_choices(bot_moves, h, q)
+    wins[seed] = np.sum(bot_moves == (choices + 1) % 3)
+    n_switches[seed] = np.sum(fav[1:] != fav[:-1])
+    fav_shares[seed] = np.bincount(fav, minlength=3) / n
+
+# win rate near 0.63, each favourite about 1/3 of the rounds, 15 switches (expected: 149 * 0.10)
+ok = (np.abs(wins / n - 0.63) <= 0.01) & np.all(np.abs(fav_shares - 1/3) <= 0.05, axis=1) & (n_switches == 15)
+candidates = np.flatnonzero(ok)
+spread = np.sum((fav_shares - 1/3) ** 2, axis=1)   # how far the favourite shares are from 1/3
+
+# per number of wins the two most even lists, then the pair with the smaller total spread
+best = None
+for w in np.unique(wins[candidates]):
+    group = candidates[wins[candidates] == w]
+    pair = group[np.argsort(spread[group])[:2]]
+    if len(pair) == 2 and (best is None or spread[pair].sum() < spread[best].sum()):
+        best = pair
+seed_x, seed_y = np.random.default_rng(0).permutation(best)   # X or Y by lot
+
+for seed in candidates:
+    print(f"{seed=}, wins={wins[seed]}, switches={n_switches[seed]}, shares={fav_shares[seed]}, spread={spread[seed]:.5f}")
+print(f"{seed_x=}, {seed_y=}")
+
+bot_lists = {}
+for name, seed in [("X", seed_x), ("Y", seed_y)]:
+    fav, bot_moves = simulate_bot(n, h, np.random.default_rng(seed), q)
+    bot_lists[name] = {"seed": int(seed), "fav": fav.tolist(), "moves": bot_moves.tolist()}
+with open(Path(rps_beliefs.__file__).parent / "bot_lists.json", "w") as f:
+    json.dump(bot_lists, f)
