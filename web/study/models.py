@@ -20,7 +20,7 @@ class Participant(models.Model):
 class Trial(models.Model):
     """One round of one participant in one block.
 
-    Gestures are coded 0 = rock, 1 = scissors, 2 = paper; outcome is 0 = win, 1 = loss, 2 = draw from the
+    trial is 0-based (0-149); the page shows trial + 1. Gestures are coded 0 = rock, 1 = scissors, 2 = paper; outcome is 0 = win, 1 = loss, 2 = draw from the
     participant's view. bot_favorite is empty in block C, where the bot has no favorite gesture. rt_ms is
     measured from the start of the countdown; timeouts counts missed attempts before the valid choice.
     """
