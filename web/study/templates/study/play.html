@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Schere – Stein – Papier</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; padding: 16px; text-align: center; }
+    header { display: flex; justify-content: space-between; font-size: 18px; }
+    #display { font-size: 40px; min-height: 120px; margin-top: 60px; }
+    #round { color: #666; }
+    #bar-box { width: 300px; max-width: 80%; height: 14px; margin: 0 auto 16px; border: 1px solid #999; visibility: hidden; }
+    #bar { height: 100%; width: 100%; background: #333; }
+    button { font-size: 22px; padding: 16px 24px; margin: 8px; cursor: pointer; }
+    button:disabled { cursor: default; opacity: 0.5; }
+    button.chosen { outline: 4px solid #333; }
+  </style>
+</head>
+<body>
+  <header>
+    <span>Gegner: {{ label }}</span>
+    <span>Du <span id="wins">{{ wins }}</span> : <span id="losses">{{ losses }}</span> Gegner</span>
+  </header>
+
+  <p id="round"></p>
+  <div id="display"></div>
+  <div id="bar-box"><div id="bar"></div></div>
+
+  {% if shown_trial <= n_trials %}
+    <div id="start-area"><button id="start">Start</button></div>
+    <div id="choices" hidden>
+      <button data-choice="0">✊ Stein</button>
+      <button data-choice="1">✌️ Schere</button>
+      <button data-choice="2">✋ Papier</button>
+    </div>
+  {% else %}
+    <p>Block beendet.</p>
+  {% endif %}
+
+  <script>
+    const NAMES = ["✊ Stein", "✌️ Schere", "✋ Papier"];   // gesture code 0, 1, 2
+    const WORDS = ["Schere", "Stein", "Papier"];  // countdown words
+    const WORD_MS = 1125;                          // display time per word
+    const LIMIT_MS = WORDS.length * WORD_MS;       // time limit = whole countdown (3375 ms); bar runs empty in this time
+    const N_TRIALS = {{ n_trials }};
+    let shownTrial = {{ shown_trial }};  // round number shown on the page, 1-based
+    let timeouts = 0;                    // missed attempts in the current round
+    let t0 = 0;                          // start of the countdown (ms)
+    let active = false;                  // true while a click counts
+    let choice = null;                   // last clicked gesture in this attempt, null = no click yet
+    let rtMs = null;                     // time of the last click since the start of the countdown
+    let timers = [];
+
+    const display = document.getElementById("display");
+    const barBox = document.getElementById("bar-box");
+    const bar = document.getElementById("bar");
+    const buttons = document.querySelectorAll("#choices button");
+
+    function setActive(value) {
+      active = value;
+      buttons.forEach(b => b.disabled = !value);
+    }
+
+    function clearTimers() {
+      timers.forEach(clearTimeout);
+      timers = [];
+      barBox.style.visibility = "hidden";
+    }
+
+    function startBar() {
+      bar.style.transition = "none";
+      bar.style.width = "100%";
+      barBox.style.visibility = "visible";
+      bar.offsetWidth;  // let the browser draw the full bar before the transition starts
+      bar.style.transition = `width ${LIMIT_MS}ms linear`;
+      bar.style.width = "0%";
+    }
+
+    function markChoice() {
+      buttons.forEach(b => b.classList.toggle("chosen", Number(b.dataset.choice) === choice));
+    }
+
+    function startRound() {
+      document.getElementById("round").textContent = `Runde ${shownTrial} von ${N_TRIALS}`;
+      choice = null;
+      rtMs = null;
+      markChoice();
+      t0 = performance.now();
+      setActive(true);
+      startBar();
+      WORDS.forEach((w, i) => timers.push(setTimeout(() => display.textContent = w, i * WORD_MS)));
+      timers.push(setTimeout(endAttempt, LIMIT_MS));
+    }
+
+    function click(gesture) {
+      if (!active) return;
+      choice = gesture;  // the last click counts
+      rtMs = Math.round(performance.now() - t0);
+      markChoice();
+    }
+
+    function endAttempt() {
+      setActive(false);
+      clearTimers();
+      if (choice === null) tooSlow();
+      else submit();
+    }
+
+    function tooSlow() {
+      timeouts += 1;
+      display.textContent = "Zu langsam";
+      setTimeout(startRound, 1000);
+    }
+
+    async function submit() {
+      let data;
+      try {
+        const response = await fetch("{% url 'play_round' %}", {
+          method: "POST",
+          headers: {"Content-Type": "application/json", "X-CSRFToken": "{{ csrf_token }}"},
+          body: JSON.stringify({shown_trial: shownTrial, choice: choice, rt_ms: rtMs, timeouts: timeouts}),
+        });
+        if (!response.ok) throw new Error(response.status);
+        data = await response.json();
+      } catch (error) {
+        location.reload();  // server state is authoritative: reload continues at the next unsaved round
+        return;
+      }
+      display.innerHTML = `Du: ${NAMES[choice]}<br>Gegner: ${NAMES[data.bot_move]}`;
+      document.getElementById("wins").textContent = data.wins;
+      document.getElementById("losses").textContent = data.losses;
+      setTimeout(() => {
+        if (data.done) {
+          display.textContent = "Block beendet.";
+          document.getElementById("choices").hidden = true;
+        } else {
+          shownTrial += 1;
+          timeouts = 0;
+          startRound();
+        }
+      }, 1000);
+    }
+
+    buttons.forEach(b => b.addEventListener("click", () => click(Number(b.dataset.choice))));
+    document.getElementById("start")?.addEventListener("click", () => {
+      document.getElementById("start-area").hidden = true;
+      document.getElementById("choices").hidden = false;
+      startRound();
+    });
+  </script>
+</body>
+</html>
