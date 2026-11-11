@@ -2,7 +2,7 @@ import json
 from importlib.resources import files
 
 
-BLOCK_INFO = {"A": ("Mensch", "Y"), "B": ("KI 1", "X"), "C": ("KI 2", None)}
+BLOCK_INFO = {"A": ("Mensch", "Y", "human"), "B": ("KI 1", "X", "ai"), "C": ("KI 2", None, "ai")}
 BLOCK_ORDER = {1: ["A", "B", "C"], 2: ["B", "A", "C"]}
 
 

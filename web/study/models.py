@@ -22,7 +22,8 @@ class Trial(models.Model):
 
     trial is 0-based (0-149); the page shows trial + 1. Gestures are coded 0 = rock, 1 = scissors, 2 = paper; outcome is 0 = win, 1 = loss, 2 = draw from the
     participant's view. bot_favorite is empty in block C, where the bot has no favorite gesture. rt_ms is
-    measured from the start of the countdown to the last click; timeouts counts missed attempts before the valid choice.
+    measured from the start of the countdown to the last click; timeouts counts missed attempts before the valid choice; first_choice is the first clicked gesture;
+    changes counts switches to a different gesture; feedback_ms is the time from showing the result to pressing Weiter (empty if not measured).
     """
     participant = models.ForeignKey(Participant, on_delete=models.CASCADE)
     block = models.CharField(max_length=1, choices=BLOCKS)
@@ -35,6 +36,9 @@ class Trial(models.Model):
     outcome = models.IntegerField()
     rt_ms = models.IntegerField()
     timeouts = models.IntegerField(default=0)
+    first_choice = models.IntegerField()
+    changes = models.IntegerField(default=0)
+    feedback_ms = models.IntegerField(null=True, blank=True)
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["participant", "block", "trial"], name="unique_trial")]

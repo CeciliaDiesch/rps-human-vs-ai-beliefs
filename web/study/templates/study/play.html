@@ -1,3 +1,4 @@
+{% load static %}
 <!doctype html>
 <html lang="de">
 <head>
@@ -5,15 +6,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Schere – Stein – Papier</title>
   <style>
+    [hidden] { display: none !important; }  /* hidden must win over display rules below */
     body { font-family: system-ui, sans-serif; margin: 0; padding: 16px; text-align: center; }
     header { display: flex; justify-content: space-between; font-size: 18px; }
-    #display { font-size: 40px; min-height: 120px; margin-top: 60px; }
     #round { color: #666; }
-    #bar-box { width: 300px; max-width: 80%; height: 14px; margin: 0 auto 16px; border: 1px solid #999; visibility: hidden; }
+    #stage { height: 330px; display: flex; flex-direction: column; justify-content: center; }
+    #word { font-size: 40px; min-height: 50px; }
+    #bar-box { width: 300px; max-width: 80%; height: 14px; margin: 16px auto 0; border: 1px solid #999; visibility: hidden; }
     #bar { height: 100%; width: 100%; background: #333; }
-    button { font-size: 22px; padding: 16px 24px; margin: 8px; cursor: pointer; }
+    .field { width: 120px; height: 150px; margin: 8px auto; }
+    .field img, .gesture img { width: 100%; height: 100%; object-fit: contain; display: block; }
+    .gesture { position: relative; width: 110px; padding: 6px; margin: 8px; background: white; border: 3px solid #ccc; border-radius: 8px; cursor: pointer; }
+    .gesture img { height: 130px; }
+    .gesture span { font-size: 15px; }
+    .gesture.chosen { border-color: #1e6bd6; transform: scale(1.1); }
+    .gesture.chosen::after { content: ""; position: absolute; inset: 0; background: rgba(30, 107, 214, 0.25); border-radius: 5px; }
     button:disabled { cursor: default; opacity: 0.5; }
-    button.chosen { outline: 4px solid #333; }
+    #start, #next { font-size: 22px; padding: 12px 28px; margin: 8px; cursor: pointer; }
+    #next { visibility: hidden; }
   </style>
 </head>
 <body>
@@ -23,38 +33,69 @@
   </header>
 
   <p id="round"></p>
-  <div id="display"></div>
-  <div id="bar-box"><div id="bar"></div></div>
+
+  <div id="stage">
+    <div id="countdown">
+      <div id="word"></div>
+      <div id="bar-box"><div id="bar"></div></div>
+    </div>
+    <!-- result: opponent on top, own hand below; all images are in the page from the start, so they are loaded before they are needed -->
+    <div id="result" hidden>
+      <div class="field">
+        <img class="opponent" data-gesture="0" src="{% static 'study/img/opponent_'|add:opponent_set|add:'_rock.jpg' %}" alt="" hidden>
+        <img class="opponent" data-gesture="1" src="{% static 'study/img/opponent_'|add:opponent_set|add:'_scissors.jpg' %}" alt="" hidden>
+        <img class="opponent" data-gesture="2" src="{% static 'study/img/opponent_'|add:opponent_set|add:'_paper.jpg' %}" alt="" hidden>
+      </div>
+      <div class="field">
+        <img class="player" data-gesture="0" src="{% static 'study/img/player_rock.jpg' %}" alt="" hidden>
+        <img class="player" data-gesture="1" src="{% static 'study/img/player_scissors.jpg' %}" alt="" hidden>
+        <img class="player" data-gesture="2" src="{% static 'study/img/player_paper.jpg' %}" alt="" hidden>
+      </div>
+    </div>
+  </div>
 
   {% if shown_trial <= n_trials %}
     <div id="start-area"><button id="start">Start</button></div>
     <div id="choices" hidden>
-      <button data-choice="0">✊ Stein</button>
-      <button data-choice="1">✌️ Schere</button>
-      <button data-choice="2">✋ Papier</button>
+      <div>
+        <button class="gesture" data-choice="0"><img src="{% static 'study/img/player_rock.jpg' %}" alt=""><span>Stein</span></button>
+        <button class="gesture" data-choice="1"><img src="{% static 'study/img/player_scissors.jpg' %}" alt=""><span>Schere</span></button>
+        <button class="gesture" data-choice="2"><img src="{% static 'study/img/player_paper.jpg' %}" alt=""><span>Papier</span></button>
+      </div>
+      <button id="next">Weiter</button>
     </div>
   {% else %}
     <p>Block beendet.</p>
   {% endif %}
 
   <script>
-    const NAMES = ["✊ Stein", "✌️ Schere", "✋ Papier"];   // gesture code 0, 1, 2
-    const WORDS = ["Schere", "Stein", "Papier"];  // countdown words
-    const WORD_MS = 1125;                          // display time per word
-    const LIMIT_MS = WORDS.length * WORD_MS;       // time limit = whole countdown (3375 ms); bar runs empty in this time
+    const WORDS = ["„Schere“", "„Stein“", "„Papier“"];  // countdown words
+    const WORD_MS = 1125;                                // display time per word
+    const LIMIT_MS = WORDS.length * WORD_MS;             // time limit = whole countdown (3375 ms); bar runs empty in this time
     const N_TRIALS = {{ n_trials }};
+
     let shownTrial = {{ shown_trial }};  // round number shown on the page, 1-based
     let timeouts = 0;                    // missed attempts in the current round
     let t0 = 0;                          // start of the countdown (ms)
-    let active = false;                  // true while a click counts
-    let choice = null;                   // last clicked gesture in this attempt, null = no click yet
-    let rtMs = null;                     // time of the last click since the start of the countdown
+    let active = false;                  // true while clicks on gestures count
+    let choice = null;                   // current choice, null = no click yet
+    let firstChoice = null;              // first clicked gesture
+    let changes = 0;                     // switches to a different gesture
+    let rtMs = null;                     // time of the last switch since the start of the countdown
     let timers = [];
+    let waiting = false;                 // true while the result is shown and Weiter is expected
+    let resultShownAt = 0;               // time when the result appeared (ms)
+    let done = false;                    // true after the last round of the block
 
-    const display = document.getElementById("display");
+    const word = document.getElementById("word");
     const barBox = document.getElementById("bar-box");
     const bar = document.getElementById("bar");
-    const buttons = document.querySelectorAll("#choices button");
+    const countdown = document.getElementById("countdown");
+    const result = document.getElementById("result");
+    const nextButton = document.getElementById("next");
+    const buttons = document.querySelectorAll(".gesture");
+    const opponentImages = document.querySelectorAll("#result .opponent");
+    const playerImages = document.querySelectorAll("#result .player");
 
     function setActive(value) {
       active = value;
@@ -80,21 +121,31 @@
       buttons.forEach(b => b.classList.toggle("chosen", Number(b.dataset.choice) === choice));
     }
 
+    function showOnly(images, gesture) {
+      images.forEach(img => img.hidden = Number(img.dataset.gesture) !== gesture);
+    }
+
     function startRound() {
       document.getElementById("round").textContent = `Runde ${shownTrial} von ${N_TRIALS}`;
       choice = null;
+      firstChoice = null;
+      changes = 0;
       rtMs = null;
       markChoice();
+      result.hidden = true;
+      countdown.hidden = false;
       t0 = performance.now();
       setActive(true);
       startBar();
-      WORDS.forEach((w, i) => timers.push(setTimeout(() => display.textContent = w, i * WORD_MS)));
+      WORDS.forEach((w, i) => timers.push(setTimeout(() => word.textContent = w, i * WORD_MS)));
       timers.push(setTimeout(endAttempt, LIMIT_MS));
     }
 
     function click(gesture) {
-      if (!active) return;
-      choice = gesture;  // the last click counts
+      if (!active || gesture === choice) return;  // same gesture again does not count
+      if (choice === null) firstChoice = gesture;
+      else changes += 1;
+      choice = gesture;
       rtMs = Math.round(performance.now() - t0);
       markChoice();
     }
@@ -108,17 +159,18 @@
 
     function tooSlow() {
       timeouts += 1;
-      display.textContent = "Zu langsam";
+      word.textContent = "Zu langsam";
       setTimeout(startRound, 1000);
     }
 
     async function submit() {
+      const round = {shown_trial: shownTrial, choice: choice, first_choice: firstChoice, changes: changes, rt_ms: rtMs, timeouts: timeouts};
       let data;
       try {
         const response = await fetch("{% url 'play_round' %}", {
           method: "POST",
           headers: {"Content-Type": "application/json", "X-CSRFToken": "{{ csrf_token }}"},
-          body: JSON.stringify({shown_trial: shownTrial, choice: choice, rt_ms: rtMs, timeouts: timeouts}),
+          body: JSON.stringify(round),
         });
         if (!response.ok) throw new Error(response.status);
         data = await response.json();
@@ -126,22 +178,55 @@
         location.reload();  // server state is authoritative: reload continues at the next unsaved round
         return;
       }
-      display.innerHTML = `Du: ${NAMES[choice]}<br>Gegner: ${NAMES[data.bot_move]}`;
+      showResult(data);
+    }
+
+    function showResult(data) {
+      showOnly(opponentImages, data.bot_move);
+      showOnly(playerImages, choice);
+      countdown.hidden = true;
+      result.hidden = false;
       document.getElementById("wins").textContent = data.wins;
       document.getElementById("losses").textContent = data.losses;
-      setTimeout(() => {
-        if (data.done) {
-          display.textContent = "Block beendet.";
-          document.getElementById("choices").hidden = true;
-        } else {
-          shownTrial += 1;
-          timeouts = 0;
-          startRound();
-        }
-      }, 1000);
+      done = data.done;
+      nextButton.style.visibility = "visible";
+      resultShownAt = performance.now();
+      waiting = true;
+    }
+
+    function next() {
+      if (!waiting) return;
+      waiting = false;
+      nextButton.style.visibility = "hidden";
+      const feedback = {shown_trial: shownTrial, feedback_ms: Math.round(performance.now() - resultShownAt)};
+      fetch("{% url 'play_feedback' %}", {  // no waiting for the answer; if it fails, feedback_ms stays empty
+        method: "POST",
+        headers: {"Content-Type": "application/json", "X-CSRFToken": "{{ csrf_token }}"},
+        body: JSON.stringify(feedback),
+        keepalive: true,
+      }).catch(() => {});
+      if (done) {
+        result.hidden = true;
+        countdown.hidden = false;
+        word.textContent = "Block beendet.";
+        document.getElementById("choices").hidden = true;
+      } else {
+        shownTrial += 1;
+        timeouts = 0;
+        startRound();
+      }
     }
 
     buttons.forEach(b => b.addEventListener("click", () => click(Number(b.dataset.choice))));
+    nextButton?.addEventListener("click", next);
+    document.addEventListener("keydown", e => {
+      if (e.code !== "Space") return;
+      e.preventDefault();  // space must not press the focused button again
+      next();
+    });
+    document.addEventListener("keyup", e => {
+      if (e.code === "Space") e.preventDefault();
+    });
     document.getElementById("start")?.addEventListener("click", () => {
       document.getElementById("start-area").hidden = true;
       document.getElementById("choices").hidden = false;
