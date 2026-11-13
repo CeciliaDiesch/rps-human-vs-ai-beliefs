@@ -58,3 +58,15 @@ def markov_learn(trans: np.ndarray, last_choice: int, last_outcome: int, choice:
     so the caller only uses this from round 1 on.
     """
     trans[last_choice, last_outcome, choice] += 1
+
+
+def markov_table(choices: list[int], outcomes: list[int]) -> np.ndarray:
+    """Count the Markov bot's table from the rounds played so far.
+
+    choices and outcomes are the person's gestures and results of the saved rounds, in order.
+    Returns trans with shape (3, 3, 3) = [last gesture, last outcome, next gesture], built with markov_learn from round 1 on.
+    """
+    trans = np.zeros((3, 3, 3))
+    for i in range(1, len(choices)):
+        markov_learn(trans, choices[i-1], outcomes[i-1], choices[i])
+    return trans

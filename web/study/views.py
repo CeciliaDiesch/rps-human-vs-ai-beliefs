@@ -4,8 +4,9 @@ from django.db import IntegrityError
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
+import numpy as np
 
-from rps_beliefs.bots import outcome
+from rps_beliefs.bots import markov_bot_move, markov_table, outcome
 from rps_beliefs.study import BLOCK_INFO, BLOCK_ORDER, load_bot_lists, next_participant
 
 from .models import Participant, Trial
@@ -58,9 +59,24 @@ def play_round(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"error": "invalid choice"}, status=400)
     if shown_trial != t + 1 or t >= N_TRIALS:                    # browser and database disagree, or block already finished
         return JsonResponse({"error": "round out of sync"}, status=409)
-    bot = LISTS[BLOCK_INFO[block][1]]                            # bot list of this block ("X" or "Y")
-    bot_move = bot["moves"][t]
-    bot_favorite = bot["fav"][t]
+    list_name = BLOCK_INFO[block][1]                             # "X", "Y" or None (block C)
+    if list_name is None:                                        # block C: Markov bot, table recounted from saved rounds
+        history = trials.order_by("trial").values_list("choice", "outcome")
+        past_choices = [row[0] for row in history]
+        past_outcomes = [row[1] for row in history]
+        trans = markov_table(past_choices, past_outcomes)
+        if t > 0:
+            last_choice, last_outcome = past_choices[t-1], past_outcomes[t-1]
+        else:
+            last_choice, last_outcome = 0, 0
+        rng = np.random.default_rng([p.id, t])                   # same participant and round -> same random draw
+        bot_move = markov_bot_move(trans, last_choice, last_outcome, rng)
+        bot_favorite = None                                      # Markov bot has no favorite gesture
+    else:                                                        # blocks A and B: fixed list
+        bot = LISTS[list_name]
+        bot_move = bot["moves"][t]
+        bot_favorite = bot["fav"][t]
+
     try:
         Trial.objects.create(participant=p, block=block, block_pos=1, label=label, trial=t,  # TODO stage 4: block_pos from BLOCK_ORDER
                              bot_favorite=bot_favorite, bot_move=bot_move, choice=choice, first_choice=first_choice, changes=changes, outcome=outcome(choice, bot_move),
